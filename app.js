@@ -1,28 +1,99 @@
-// Tangga Nada Frekuensi (C Major Scale approximate frequencies in Hz)
-// Kita menggunakan oktaf 4 (C4 - C5) sebagai referensi standar untuk suara
-const NOTES = [
-    { name: 'Do', freq: 261.63 }, // C4
-    { name: 'Re', freq: 293.66 }, // D4
-    { name: 'Mi', freq: 329.63 }, // E4
-    { name: 'Fa', freq: 349.23 }, // F4
-    { name: 'So', freq: 392.00 }, // G4
-    { name: 'La', freq: 440.00 }, // A4
-    { name: 'Ti', freq: 493.88 }, // B4
-    { name: 'Do^', freq: 523.25 } // C5
+import { PitchDetector } from "pitchy";
+
+// Tangga Nada Frekuensi Map (Akan diisi dinamis saat kalibrasi)
+let NOTES = [];
+
+// Base Frequency & Ratios based on user's Slendro tuning
+let basePitchHz = 84;
+const RATIOS = {
+    '1': 1.0,
+    '2': 1.190476,
+    '3': 1.297619,
+    '5': 1.369047,
+    '6': 1.488095,
+    '1^': 1.845238,
+    '2^': 1.964285
+};
+
+// Batas minimum dan maksimum kanvas dinamis
+let canvasMinFreq = 60;
+let canvasMaxFreq = 185;
+
+function generateNotes(baseHz) {
+    NOTES = [
+        { name: '1', freq: baseHz * RATIOS['1'] },
+        { name: '2', freq: baseHz * RATIOS['2'] },
+        { name: '3', freq: baseHz * RATIOS['3'] },
+        { name: '5', freq: baseHz * RATIOS['5'] },
+        { name: '6', freq: baseHz * RATIOS['6'] },
+        { name: '1^', freq: baseHz * RATIOS['1^'] },
+        { name: '2^', freq: baseHz * RATIOS['2^'] }
+    ];
+    canvasMinFreq = baseHz - 20; // Kasih ruang napas di bawah
+    canvasMaxFreq = (baseHz * RATIOS['2^']) + 20; // Kasih ruang napas di atas
+}
+
+// Macapat Kinanthi Baris
+const LEVELS = [
+    // Level 0: Pemanasan Tangga Nada Naik (Urutan Slendro)
+    [
+        {n: '1', l: 'ji'}, {n: '2', l: 'ro'}, {n: '3', l: 'lu'}, 
+        {n: '5', l: 'mo'}, {n: '6', l: 'nem'}, {n: '1^', l: 'ji'}, {n: '2^', l: 'ro'}
+    ],
+    // Level 1: Pemanasan Tangga Nada Turun
+    [
+        {n: '2^', l: 'ro'}, {n: '1^', l: 'ji'}, {n: '6', l: 'nem'}, {n: '5', l: 'mo'}, 
+        {n: '3', l: 'lu'}, {n: '2', l: 'ro'}, {n: '1', l: 'ji'}
+    ],
+    [
+        {n: '5', l: 'mang'}, {n: '6', l: 'ka'}, {n: '6', l: 'kan'}, {n: '6', l: 'thi'}, 
+        {n: '6', l: 'ning'}, {n: '1^', l: 'tu'}, {n: '2^', l: 'mu'}, {n: '2^', l: 'wuh'}
+    ],
+    [
+        {n: '2^', l: 'sa'}, {n: '2^', l: 'la'}, {n: '1^', l: 'mi'}, {n: '1^', l: 'mung'}, 
+        {n: '6', l: 'a'}, {n: '6', l: 'was'}, {n: '1^', l: 'was'}, {n: '5', l: 'e'}, {n: '6', l: 'ling'}
+    ],
+    [
+        {n: '5', l: 'e'}, {n: '6', l: 'ling'}, {n: '1^', l: 'lu'}, {n: '1^', l: 'ki'}, 
+        {n: '1^', l: 'ta'}, {n: '1^', l: 'ning'}, {n: '1^', l: 'a'}, {n: '6', l: 'lam'}, {n: '1^', l: 'lam'}
+    ],
+    [
+        {n: '5', l: 'da'}, {n: '5', l: 'di'}, {n: '5', l: 'wir'}, {n: '5', l: 'ya'}, 
+        {n: '5', l: 'ning'}, {n: '2', l: 'du'}, {n: '3', l: 'ma'}, {n: '2', l: 'ma'}, {n: '1', l: 'di'}
+    ],
+    [
+        {n: '1', l: 'su'}, {n: '2', l: 'pa'}, {n: '3', l: 'di'}, {n: '5', l: 'nir'}, 
+        {n: '5', l: 'ing'}, {n: '5', l: 'sang'}, {n: '5', l: 'sa'}, {n: '5', l: 'ya'}
+    ],
+    [
+        {n: '3', l: 'ye'}, {n: '2', l: 'ku'}, {n: '2', l: 'pang'}, {n: '2', l: 'rek'}, 
+        {n: '2', l: 'sa'}, {n: '3', l: 'ning'}, {n: '2', l: 'ning'}, {n: '3', l: 'u'}, {n: '5', l: 'rip'}
+    ]
 ];
 
 let audioContext;
 let analyser;
 let microphone;
-let pitch; // Model TensorFlow ml5.js
-let latestDetectedFreq = -1;
+let floatDataArray;
+let detector;
+let animationId;
+
 let isPlaying = false;
+let isLevelComplete = false;
+
+// Game states
 let score = 0;
+let currentLevel = 0;
+let noteIndex = 0;
+let bouncesRemaining = 4;
+let invulnerableFrames = 0;
+
 let currentPitch = 0;
-let volumeThreshold = 0.02; // Threshold awal
+let volumeThreshold = 0.01; // Threshold awal
 
 // Calibration DOM Elements
 const calibVolume = document.getElementById('calibVolume');
+const calibRawVoice = document.getElementById('calibRawVoice');
 const calibFreq = document.getElementById('calibFreq');
 const calibSmoothed = document.getElementById('calibSmoothed');
 const threshSlider = document.getElementById('volumeThreshold');
@@ -39,55 +110,67 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
+const nextLevelBtn = document.getElementById('nextLevelBtn');
+
 const startOverlay = document.getElementById('startOverlay');
+const preCalibOverlay = document.getElementById('preCalibOverlay');
+const liveCalibHz = document.getElementById('liveCalibHz');
+const manualHzInput = document.getElementById('manualHzInput');
+const lockPitchBtn = document.getElementById('lockPitchBtn');
+
 const gameOverOverlay = document.getElementById('gameOverOverlay');
+const levelCompleteOverlay = document.getElementById('levelCompleteOverlay');
+const countdownOverlay = document.getElementById('countdownOverlay');
+const countdownTitle = document.getElementById('countdownTitle');
+const countdownSubtitle = document.getElementById('countdownSubtitle');
+const countdownTimer = document.getElementById('countdownTimer');
+
+const victoryOverlay = document.getElementById('victoryOverlay');
+const victoryScore = document.getElementById('victoryScore');
+const victoryRestartBtn = document.getElementById('victoryRestartBtn');
+
 const scoreDisplay = document.getElementById('scoreDisplay');
+const levelDisplay = document.getElementById('levelDisplay');
+const livesDisplay = document.getElementById('livesDisplay');
 const noteDisplay = document.getElementById('noteDisplay');
 const finalScore = document.getElementById('finalScore');
 
 // Game Entities
 let ball = {
     x: 100,
-    y: canvas.height / 2,
+    y: canvas.height,
     radius: 15,
-    targetY: canvas.height / 2
+    targetY: canvas.height
 };
 
 let obstacles = [];
 const OBSTACLE_WIDTH = 60;
-const OBSTACLE_SPEED = 1.5; // Diperlambat dari 3
-const HOLE_HEIGHT = 120; // Diperbesar sedikit agar lebih mudah
+const OBSTACLE_SPEED = 1.5;
+const HOLE_HEIGHT = 120;
 let frameCount = 0;
+let nextSpawnFrame = 0;
 
-// Menghitung batas kebisingan suara
-function getRMS(buffer) {
-    let rms = 0;
-    for (let i = 0; i < buffer.length; i++) {
-        rms += buffer[i] * buffer[i];
-    }
-    return Math.sqrt(rms / buffer.length);
-}
-
-// Convert frequency to Y position on canvas
+// Convert Frequency to Y position on canvas
 function getPitchYPosition(freq) {
-    if (freq === -1) return ball.y; // Tetap di posisi jika tidak ada suara
+    if (freq === -1 || freq < canvasMinFreq - 10) return canvas.height;
     
-    // Cari rentang frekuensi
-    const minFreq = NOTES[0].freq * 0.8; // Sedikit di bawah Do
-    const maxFreq = NOTES[NOTES.length-1].freq * 1.2; // Sedikit di atas Do tinggi
-
-    // Posisikan: frekuensi rendah di bawah (y besar), tinggi di atas (y kecil)
-    let y = canvas.height - ((freq - minFreq) / (maxFreq - minFreq)) * canvas.height;
+    let clampedFreq = Math.max(canvasMinFreq, Math.min(freq, canvasMaxFreq));
     
-    // Clamp
-    if (y < 0) y = 0;
-    if (y > canvas.height) y = canvas.height;
+    // Logarithmic-like mapping (using simple linear for now)
+    let percent = (clampedFreq - canvasMinFreq) / (canvasMaxFreq - canvasMinFreq);
+    
+    let y = canvas.height - (percent * canvas.height);
+    
+    const margin = ball.radius + 10;
+    if (y < margin) y = margin;
+    if (y > canvas.height - margin) y = canvas.height - margin;
     
     return y;
 }
 
 function getClosestNoteName(freq) {
-    if (freq === -1) return "-";
+    if (freq === -1 || freq < canvasMinFreq - 10) return "-";
+    if (NOTES.length === 0) return "-";
     let closest = NOTES[0];
     let minDiff = Math.abs(freq - closest.freq);
     
@@ -103,24 +186,33 @@ function getClosestNoteName(freq) {
 
 async function startAudio() {
     try {
-        startBtn.innerText = "Memuat AI Model...";
+        startBtn.innerText = "Mengaktifkan Mikrofon...";
         startBtn.disabled = true;
         
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
-        // Memuat Model Pitch Detection CREPE (Tensorflow.js)
-        pitch = ml5.pitchDetection(
-            'https://cdn.jsdelivr.net/gh/ml5js/ml5-data-and-models/models/pitch-detection/crepe/',
-            audioContext,
-            stream,
-            modelLoaded
-        );
-
         analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048;
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.8;
+        
         microphone = audioContext.createMediaStreamSource(stream);
         microphone.connect(analyser);
+        
+        floatDataArray = new Float32Array(analyser.fftSize);
+        detector = PitchDetector.forFloat32Array(analyser.fftSize);
+
+        // Tanpa loading AI/Algoritma pitch, langsung mulai game
+        startBtn.innerText = "Mulai Bermain";
+        startBtn.disabled = false;
+        currentLevel = 0;
+        score = 0;
+        
+        // Mulai fase kalibrasi
+        startOverlay.classList.add('hidden');
+        preCalibOverlay.classList.remove('hidden');
+        isCalibrating = true;
+        calibrationLoop();
 
     } catch (err) {
         alert("Gagal mengakses mikrofon: " + err);
@@ -129,87 +221,132 @@ async function startAudio() {
     }
 }
 
-function modelLoaded() {
-    startBtn.innerText = "Mulai Bermain";
-    startBtn.disabled = false;
-    startGame();
-    getPitchLoop(); // Jalankan loop deteksi TensorFlow
-}
-
-// Loop asinkronous untuk membaca pitch dari TensorFlow
-function getPitchLoop() {
-    if (pitch && isPlaying) {
-        pitch.getPitch((err, frequency) => {
-            if (frequency) {
-                latestDetectedFreq = frequency;
-            } else {
-                latestDetectedFreq = -1;
-            }
-            getPitchLoop(); // Panggil lagi
-        });
-    }
-}
-
 function spawnObstacle() {
-    // Pilih nada target secara acak
-    const randomNoteIndex = Math.floor(Math.random() * NOTES.length);
-    const targetFreq = NOTES[randomNoteIndex].freq;
+    if (noteIndex >= LEVELS[currentLevel].length) {
+        // Cek jika rintangan habis dan baris selesai
+        if (obstacles.length === 0 && !isLevelComplete) {
+            triggerLevelComplete();
+        }
+        return;
+    }
+
+    const targetNote = LEVELS[currentLevel][noteIndex];
+    const targetNoteObj = NOTES.find(n => n.name === targetNote.n);
+    const targetFreq = targetNoteObj ? targetNoteObj.freq : NOTES[0].freq;
     const holeY = getPitchYPosition(targetFreq);
+
+    let width = OBSTACLE_WIDTH;
+    let gap = 140; // Jarak standar (sama seperti sebelum diupdate)
+
+    // Pola Macapat hanya berlaku untuk lagu utama (currentLevel >= 2)
+    if (currentLevel >= 2) {
+        // Tiap suku kata genap (index 1, 3, 5, 7) dibuat panjang dan senggangnya panjang
+        let isLong = (noteIndex % 2 !== 0); 
+        width = isLong ? OBSTACLE_WIDTH * 2 : OBSTACLE_WIDTH;
+        gap = isLong ? 220 : 60; // Jeda panjang (senggang) vs Jeda pendek antar kata
+    }
 
     obstacles.push({
         x: canvas.width,
         holeY: holeY,
-        noteName: NOTES[randomNoteIndex].name,
-        passed: false
+        noteName: targetNote.n,
+        lyric: targetNote.l,
+        passed: false,
+        width: width
     });
+    
+    // Tentukan kapan rintangan berikutnya akan muncul
+    // = frame saat ini + waktu rintangan ini lewat sepenuhnya + jeda
+    nextSpawnFrame = frameCount + (width / OBSTACLE_SPEED) + gap;
+    
+    noteIndex++;
+}
+
+function triggerLevelComplete() {
+    isLevelComplete = true;
+    isPlaying = false;
+    levelCompleteOverlay.classList.remove('hidden');
 }
 
 function update() {
     if (!isPlaying) return;
 
-    // Cek Volume untuk Noise Threshold
-    const buffer = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(buffer);
-    let rms = getRMS(buffer);
+    // AMBIL DATA AUDIO
+    analyser.getFloatTimeDomainData(floatDataArray);
     
-    // Update Volume di Panel Kalibrasi
+    let sumSquares = 0;
+    for (let i = 0; i < floatDataArray.length; i++) {
+        sumSquares += floatDataArray[i] * floatDataArray[i];
+    }
+    let rms = Math.sqrt(sumSquares / floatDataArray.length);
+    
     calibVolume.innerText = rms.toFixed(4);
     if (rms < volumeThreshold) {
         calibVolume.style.color = '#ccc';
+        calibFreq.innerText = 'Diam';
+        calibSmoothed.innerText = '- Hz';
+        if (calibRawVoice) calibRawVoice.innerText = '- Hz';
+        // Saat diam, turunkan bola ke bawah secara perlahan
+        ball.targetY = canvas.height;
+        currentPitch = 0;
     } else {
         calibVolume.style.color = 'var(--primary)';
-    }
-
-    // Gunakan frekuensi dari ML5 jika melebihi batas noise
-    let rawPitch = (rms >= volumeThreshold) ? latestDetectedFreq : -1;
-    
-    if (rawPitch !== -1) {
-        calibFreq.innerText = rawPitch.toFixed(1) + ' Hz';
         
-        // Filter pitch menggunakan Low-pass filter agar tidak lompat-lompat
-        if (currentPitch === 0 || currentPitch === -1) {
-            currentPitch = rawPitch;
+        let [freq, clarity] = detector.findPitch(floatDataArray, audioContext.sampleRate);
+        
+        // Clarify check untuk mengabaikan noise (0.8 adalah angka yang baik untuk suara nyanyian)
+        if (clarity > 0.8 && freq !== -1 && !isNaN(freq) && freq !== Infinity && freq > 50) {
+            
+            // Tampilkan frekuensi asli suara mikrofon sebelum dikalikan
+            if (calibRawVoice) {
+                calibRawVoice.innerText = freq.toFixed(1) + ' Hz';
+            }
+
+            // OCTAVE MULTIPLIER (DIMATIKAN)
+            // Menggunakan data asli mikrofon tanpa dikalikan
+            // const voiceMultiplier = parseInt(document.getElementById('voiceType').value);
+            // freq *= voiceMultiplier;
+
+            calibFreq.innerText = freq.toFixed(1) + ' Hz';
+            
+            // Smoothing cerdas untuk mencegah jumping (outlier rejection)
+            if (currentPitch === 0) {
+                currentPitch = freq;
+            } else {
+                // Jika lompatan frekuensi sangat drastis (misal > 120 Hz)
+                // Ini biasanya adalah glitch oktaf (sub-harmoni). Kita perlambat responnya.
+                if (Math.abs(freq - currentPitch) > 120) {
+                    currentPitch = (currentPitch * 0.95) + (freq * 0.05); 
+                } else {
+                    // Smoothing normal (sedikit diperhalus dari 0.8 ke 0.85)
+                    currentPitch = (currentPitch * 0.85) + (freq * 0.15); 
+                }
+            }
+            
+            calibSmoothed.innerText = currentPitch.toFixed(1) + ' Hz';
+            ball.targetY = getPitchYPosition(currentPitch);
+            noteDisplay.innerText = getClosestNoteName(currentPitch);
         } else {
-            // Memadukan 80% nada sebelumnya dengan 20% nada baru (membuatnya stabil)
-            currentPitch = (currentPitch * 0.8) + (rawPitch * 0.2); 
+            // Suara bising tanpa nada yang jelas
+            calibFreq.innerText = 'Noise / Diam';
+            if (calibRawVoice) calibRawVoice.innerText = '- Hz';
         }
-        
-        calibSmoothed.innerText = currentPitch.toFixed(1) + ' Hz';
-        ball.targetY = getPitchYPosition(currentPitch);
-        noteDisplay.innerText = getClosestNoteName(currentPitch);
-    } else {
-        calibFreq.innerText = '- Hz';
-        calibSmoothed.innerText = '- Hz';
-        // Jangan ubah currentPitch agar bola tetap di posisinya,
-        // tapi kita biarkan perlahan turun (pilihan, saat ini ditahan)
     }
 
-    // Interpolate ball Y position (Smooth movement agar pergerakan bola lebih lembut)
-    ball.y += (ball.targetY - ball.y) * 0.05;
+    // Interpolate ball Y position (Smooth movement)
+    ball.y += (ball.targetY - ball.y) * 0.15;
+    
+    // Smoothly return ball X to 100 if it was bounced back
+    if (ball.x < 100) {
+        ball.x += (100 - ball.x) * 0.05;
+    }
 
-    // Update obstacles
+    if (invulnerableFrames > 0) {
+        invulnerableFrames--;
+    }
+
     frameCount++;
-    if (frameCount % 220 === 0) { // Spawn rate diperlambat
+    if (frameCount >= nextSpawnFrame) { // Gunakan pola waktu dinamis
         spawnObstacle();
     }
 
@@ -218,23 +355,30 @@ function update() {
         obs.x -= OBSTACLE_SPEED;
 
         // Collision detection
-        if (obs.x < ball.x + ball.radius && obs.x + OBSTACLE_WIDTH > ball.x - ball.radius) {
+        if (obs.x < ball.x + ball.radius && obs.x + obs.width > ball.x - ball.radius) {
             // Check if ball is outside the hole
             if (ball.y - ball.radius < obs.holeY - HOLE_HEIGHT / 2 || 
                 ball.y + ball.radius > obs.holeY + HOLE_HEIGHT / 2) {
-                gameOver();
+                
+                if (invulnerableFrames <= 0) {
+                    livesDisplay.innerText = '❤️ ∞';
+                    
+                    // Bounce effect (bola didorong mundur tapi tidak mengurangi nyawa)
+                    ball.x = obs.x - ball.radius - 20; 
+                    invulnerableFrames = 90; // Kebal ~1.5 detik
+                }
             }
         }
 
         // Score logic
-        if (obs.x + OBSTACLE_WIDTH < ball.x && !obs.passed) {
+        if (obs.x + obs.width < ball.x && !obs.passed) {
             obs.passed = true;
             score++;
             scoreDisplay.innerText = score;
         }
 
         // Remove off-screen obstacles
-        if (obs.x + OBSTACLE_WIDTH < 0) {
+        if (obs.x + obs.width < 0) {
             obstacles.splice(i, 1);
         }
     }
@@ -255,68 +399,244 @@ function draw() {
         ctx.moveTo(0, y);
         ctx.lineTo(canvas.width, y);
         ctx.stroke();
-        ctx.fillText(note.name, 10, y - 5);
+        
+        let displayName = note.name.replace('^', '̇');
+        ctx.fillText(displayName, 10, y - 5);
     });
 
     // Draw obstacles (Walls with holes)
     obstacles.forEach(obs => {
         ctx.fillStyle = '#4a2511'; // Warna kayu
         
-        // Wall Top
-        ctx.fillRect(obs.x, 0, OBSTACLE_WIDTH, obs.holeY - HOLE_HEIGHT / 2);
-        // Wall Bottom
-        ctx.fillRect(obs.x, obs.holeY + HOLE_HEIGHT / 2, OBSTACLE_WIDTH, canvas.height);
+        ctx.fillRect(obs.x, 0, obs.width, obs.holeY - HOLE_HEIGHT / 2);
+        ctx.fillRect(obs.x, obs.holeY + HOLE_HEIGHT / 2, obs.width, canvas.height);
         
-        // Draw Note Label inside the hole area
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.font = 'bold 24px Outfit';
+        // Draw Note Label and Lyric (Javanese Solmization)
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = 'bold 22px Outfit';
         ctx.textAlign = 'center';
-        ctx.fillText(obs.noteName, obs.x + OBSTACLE_WIDTH/2, obs.holeY + 8);
+        let displayNoteName = obs.noteName.replace('^', '̇'); // ganti tanda ^ dengan titik atas untuk notasi
+        ctx.fillText(displayNoteName, obs.x + obs.width/2, obs.holeY - 2);
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = '18px Outfit';
+        
+        let solmization = '';
+        if (obs.noteName === '1') solmization = 'ji';
+        else if (obs.noteName === '2') solmization = 'ro';
+        else if (obs.noteName === '3') solmization = 'lu';
+        else if (obs.noteName === '4') solmization = 'pat';
+        else if (obs.noteName === '5') solmization = 'mo';
+        else if (obs.noteName === '6') solmization = 'nem';
+        else if (obs.noteName === '1^') solmization = 'ji̇'; // ji titik atas
+        else if (obs.noteName === '2^') solmization = 'rȯ'; // ro titik atas
+        else solmization = obs.lyric; // fallback
+        
+        ctx.fillText(solmization, obs.x + obs.width/2, obs.holeY + 20);
     });
 
-    // Draw Ball
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#FF6B6B'; // Warna bola primary
-    ctx.fill();
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#FF6B6B';
-    ctx.closePath();
+    // Draw Ball (with blink effect if invulnerable)
+    if (invulnerableFrames > 0 && Math.floor(frameCount / 10) % 2 === 0) {
+        // Skip draw to create blink effect
+    } else {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = (invulnerableFrames > 0) ? '#FFFFFF' : '#FF6B6B'; 
+        ctx.fill();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = (invulnerableFrames > 0) ? '#FFFFFF' : '#FF6B6B';
+        ctx.closePath();
+    }
     
-    // Reset shadow
     ctx.shadowBlur = 0;
 }
 
 function gameLoop() {
-    if (!isPlaying) return;
-    update();
+    if (!isPlaying && !isLevelComplete) return; 
+    
+    if (isPlaying) {
+        update();
+    }
     draw();
-    requestAnimationFrame(gameLoop);
+    if (isPlaying || isLevelComplete) {
+        animationId = requestAnimationFrame(gameLoop);
+    }
+}
+
+let isCalibrating = false;
+let calibAnimationId;
+
+function calibrationLoop() {
+    if (!isCalibrating) return;
+    
+    analyser.getFloatTimeDomainData(floatDataArray);
+    let sumSquares = 0;
+    for (let i = 0; i < floatDataArray.length; i++) {
+        sumSquares += floatDataArray[i] * floatDataArray[i];
+    }
+    let rms = Math.sqrt(sumSquares / floatDataArray.length);
+    
+    if (rms >= volumeThreshold) {
+        let [freq, clarity] = detector.findPitch(floatDataArray, audioContext.sampleRate);
+        if (clarity > 0.8 && freq !== -1 && freq > 40 && freq < 1000) {
+            liveCalibHz.innerText = freq.toFixed(1) + ' Hz';
+            // Auto update input if it's not focused
+            if (document.activeElement !== manualHzInput) {
+                manualHzInput.value = Math.round(freq);
+            }
+        } else {
+            liveCalibHz.innerText = 'Noise';
+        }
+    } else {
+        liveCalibHz.innerText = '- Hz';
+    }
+    
+    calibAnimationId = requestAnimationFrame(calibrationLoop);
+}
+
+lockPitchBtn.addEventListener('click', () => {
+    isCalibrating = false;
+    cancelAnimationFrame(calibAnimationId);
+    
+    basePitchHz = parseFloat(manualHzInput.value);
+    if (isNaN(basePitchHz) || basePitchHz < 40) basePitchHz = 84;
+    
+    generateNotes(basePitchHz);
+    
+    preCalibOverlay.classList.add('hidden');
+    showCountdown("Yuk Pemanasan!", "Pemanasan menggunakan nada Srembangan Naik", 5, startGame);
+});
+
+// Function for showing countdown
+function showCountdown(title, subtitle, seconds, callback) {
+    countdownTitle.innerText = title;
+    countdownSubtitle.innerText = subtitle;
+    preCalibOverlay.classList.add('hidden');
+    countdownOverlay.classList.remove('hidden');
+    startOverlay.classList.add('hidden');
+    gameOverOverlay.classList.add('hidden');
+    levelCompleteOverlay.classList.add('hidden');
+    victoryOverlay.classList.add('hidden');
+    
+    let time = seconds;
+    countdownTimer.innerText = time;
+    
+    let interval = setInterval(() => {
+        time--;
+        if (time > 0) {
+            countdownTimer.innerText = time;
+        } else {
+            clearInterval(interval);
+            countdownOverlay.classList.add('hidden');
+            callback();
+        }
+    }, 1000);
 }
 
 function startGame() {
+    preCalibOverlay.classList.add('hidden');
     startOverlay.classList.add('hidden');
     gameOverOverlay.classList.add('hidden');
+    levelCompleteOverlay.classList.add('hidden');
+    victoryOverlay.classList.add('hidden');
+    
     obstacles = [];
-    score = 0;
+    bouncesRemaining = "∞";
+    noteIndex = 0;
+    
     scoreDisplay.innerText = score;
-    ball.y = canvas.height / 2;
+    if (currentLevel === 0) {
+        levelDisplay.innerText = "Pemanasan Naik";
+    } else if (currentLevel === 1) {
+        levelDisplay.innerText = "Pemanasan Turun";
+    } else {
+        levelDisplay.innerText = "Baris " + (currentLevel - 1) + " / " + (LEVELS.length - 2);
+    }
+    livesDisplay.innerText = '❤️ ∞';
+    
+    ball.x = 100;
+    ball.y = canvas.height;
+    ball.targetY = canvas.height;
+    invulnerableFrames = 0;
+    currentPitch = 0;
+    
     isPlaying = true;
+    isLevelComplete = false;
     frameCount = 0;
+    nextSpawnFrame = 0; // Reset kapan obstacle pertama akan muncul
     
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
     }
     
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+    }
     gameLoop();
-    getPitchLoop(); // Pastikan loop ml5 berjalan kembali jika di-restart
+}
+
+function triggerVictory() {
+    isPlaying = false;
+    victoryScore.innerText = score;
+    victoryOverlay.classList.remove('hidden');
+    
+    // Confetti effect!
+    if (window.confetti) {
+        var duration = 3000;
+        var end = Date.now() + duration;
+
+        (function frame() {
+            confetti({
+                particleCount: 5,
+                angle: 60,
+                spread: 55,
+                origin: { x: 0 },
+                colors: ['#fbbf24', '#f59e0b', '#10b981', '#3b82f6']
+            });
+            confetti({
+                particleCount: 5,
+                angle: 120,
+                spread: 55,
+                origin: { x: 1 },
+                colors: ['#fbbf24', '#f59e0b', '#10b981', '#3b82f6']
+            });
+
+            if (Date.now() < end) {
+                requestAnimationFrame(frame);
+            }
+        }());
+    }
+}
+
+function nextLevel() {
+    currentLevel++;
+    if (currentLevel === 1) {
+        showCountdown("Kerja Bagus!", "Sekarang coba nada turun (Ro' ke Ji)", 3, startGame);
+    } else if (currentLevel >= LEVELS.length) {
+        triggerVictory();
+    } else {
+        startGame();
+    }
 }
 
 function gameOver() {
     isPlaying = false;
     finalScore.innerText = score;
     gameOverOverlay.classList.remove('hidden');
+    
+    // Reset back to level 0 when dying completely
+    currentLevel = 0;
 }
 
 startBtn.addEventListener('click', startAudio);
-restartBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', () => {
+    score = 0;
+    currentLevel = 0;
+    showCountdown("Yuk Pemanasan!", "Pemanasan menggunakan nada Srembangan Naik", 5, startGame);
+});
+victoryRestartBtn.addEventListener('click', () => {
+    score = 0;
+    currentLevel = 0;
+    showCountdown("Yuk Pemanasan!", "Pemanasan menggunakan nada Srembangan Naik", 5, startGame);
+});
+nextLevelBtn.addEventListener('click', nextLevel);

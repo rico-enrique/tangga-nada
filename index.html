@@ -6,7 +6,6 @@
     <title>Tangga Nada Pitch Game</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -24,14 +23,55 @@
                 <button id="startBtn" class="primary-btn">Mulai Bermain</button>
             </div>
             
+            <div id="preCalibOverlay" class="overlay hidden">
+                <h2 style="font-size: 2.5rem; color: #fbbf24;">Cari Nada Dasarmu!</h2>
+                <p>Nyanyikan nada "Ji" (terendah) senyaman mungkin.<br>Biarkan mikrofon mendeteksi, atau ketik langsung angkanya (Hz).</p>
+                <div style="margin: 20px 0; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px;">
+                    <span style="display: block; font-size: 0.9rem; color: #ccc;">Terdeteksi saat ini:</span>
+                    <span id="liveCalibHz" style="font-size: 3rem; font-weight: bold; color: var(--primary); font-variant-numeric: tabular-nums;">- Hz</span>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; justify-content: center; margin-bottom: 20px;">
+                    <label for="manualHzInput">Pilih Hz Ji:</label>
+                    <input type="number" id="manualHzInput" value="84" style="padding: 10px; font-size: 1.2rem; border-radius: 5px; border: none; width: 100px; text-align: center; font-weight: bold;">
+                </div>
+                <button id="lockPitchBtn" class="primary-btn">Kunci Nada Ji Ini</button>
+            </div>
+            
+            <div id="countdownOverlay" class="overlay hidden">
+                <h2 id="countdownTitle">Yuk Pemanasan!</h2>
+                <p id="countdownSubtitle">Pemanasan menggunakan nada Srembangan Naik</p>
+                <div class="countdown-timer" id="countdownTimer">5</div>
+            </div>
+            
             <div id="gameOverOverlay" class="overlay hidden">
                 <h2>Game Over!</h2>
                 <p>Skor Kamu: <span id="finalScore">0</span></p>
-                <button id="restartBtn" class="primary-btn">Main Lagi</button>
+                <button id="restartBtn" class="primary-btn">Coba Lagi</button>
+            </div>
+            
+            <div id="levelCompleteOverlay" class="overlay hidden">
+                <h2>Baris Selesai! 🎉</h2>
+                <p>Lanjut ke baris berikutnya.</p>
+                <button id="nextLevelBtn" class="primary-btn">Lanjut</button>
+            </div>
+            
+            <div id="victoryOverlay" class="overlay hidden">
+                <h2 style="font-size: 3.5rem; color: #fbbf24; text-shadow: 0 0 20px rgba(251, 191, 36, 0.5);">Luar Biasa! 🏆</h2>
+                <p style="font-size: 1.2rem; margin-bottom: 20px;">Kamu telah menaklukkan seluruh baris Tembang Macapat Kinanthi dengan sempurna!</p>
+                <p>Skor Akhir: <span id="victoryScore" style="font-weight: bold; font-size: 1.5rem; color: #10b981;">0</span></p>
+                <button id="victoryRestartBtn" class="primary-btn" style="margin-top: 20px; background: linear-gradient(45deg, #fbbf24, #f59e0b);">Main Lagi</button>
             </div>
         </div>
 
         <div class="stats">
+            <div class="stat-box">
+                <span class="stat-label">Baris (Level)</span>
+                <span id="levelDisplay" class="stat-value">1 / 6</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Sisa Pantulan</span>
+                <span id="livesDisplay" class="stat-value">❤️ 4</span>
+            </div>
             <div class="stat-box">
                 <span class="stat-label">Skor</span>
                 <span id="scoreDisplay" class="stat-value">0</span>
@@ -51,13 +91,22 @@
                 <input type="range" id="volumeThreshold" min="0" max="0.1" step="0.001" value="0.02">
                 <small>Batas Kebisingan (Threshold): <span id="threshDisplay">0.020</span></small>
             </div>
-            <div class="calib-row-inline">
-                <label>Frekuensi Mentah: <span id="calibFreq" class="calib-value">0 Hz</span></label>
-                <label>Frekuensi Filter: <span id="calibSmoothed" class="calib-value">0 Hz</span></label>
+            <div class="calib-row" style="margin-top: 10px;">
+                <label>Jenis Suara (Oktaf):</label>
+                <select id="voiceType" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc; background: #fff; color: #333; font-family: 'Outfit';">
+                    <option value="1">Standar / Wanita / Anak (C4-D5)</option>
+                    <option value="2" selected>Pria Dewasa (Otomatis naik 1 Oktaf)</option>
+                </select>
+            </div>
+            <div class="calib-row-inline" style="margin-top: 10px;">
+                <label>Frekuensi Asli (Mic): <span id="calibRawVoice" class="calib-value">0 Hz</span></label>
+                <label>Frekuensi Game: <span id="calibFreq" class="calib-value">0 Hz</span></label>
+                <label>Frekuensi Halus: <span id="calibSmoothed" class="calib-value">0 Hz</span></label>
             </div>
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
